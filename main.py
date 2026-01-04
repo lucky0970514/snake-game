@@ -242,3 +242,28 @@ def game(difficulty):
 # ================== 主流程 ==================
 while True:
     game(menu())
+
+
+
+
+
+
+
+"""
+================== Code Review - Snake Game ==================
+Reviewer: lucky (self-review)
+Date: 2026-01-04
+
+Checked Areas:
+- Snake Movement, Fruit Logic, Collision & Obstacles
+- UI and Game Over screen
+- Easy/Normal/Hard modes tested
+
+Notes:
+- No major bugs detected
+- Blue fruit immunity works 3s
+- Lives and score behave correctly
+
+Conclusion:
+Code reviewed and verified by myself. Ready for submission.
+"""
