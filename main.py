@@ -17,30 +17,11 @@ BIG_FONT = pygame.font.SysFont("arial", 40)
 # 顏色
 BG = (30, 30, 40)
 GREEN = (80, 200, 120)
-DARK_GREEN = (60, 160, 100)
 RED = (220, 60, 60)
 YELLOW = (240, 200, 60)
 BLUE = (80, 150, 220)
 GRAY = (120, 120, 120)
 WHITE = (240, 240, 240)
-
-# ================== UI 按鈕 ==================
-class Button:
-    def __init__(self, rect, text):
-        self.rect = pygame.Rect(rect)
-        self.text = text
-
-    def draw(self):
-        mouse = pygame.mouse.get_pos()
-        color = BLUE if self.rect.collidepoint(mouse) else DARK_GREEN
-        shadow = self.rect.move(4, 4)
-        pygame.draw.rect(screen, (20,20,20), shadow, border_radius=10)
-        pygame.draw.rect(screen, color, self.rect, border_radius=10)
-        txt = FONT.render(self.text, True, WHITE)
-        screen.blit(txt, txt.get_rect(center=self.rect.center))
-
-    def clicked(self, event):
-        return event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos)
 
 # ================== 愛心 ==================
 def draw_heart(x, y, size=8):
@@ -52,17 +33,17 @@ def draw_heart(x, y, size=8):
         (x + size, y + size*3)
     ])
 
-# ================== 遊戲物件 ==================
+# ================== 工具函式 ==================
 def random_pos():
     return (
         random.randrange(0, WIDTH, CELL),
         random.randrange(0, HEIGHT, CELL)
     )
 
-def draw_snake(snake):
+def draw_snake(snake, immune=False):
+    color = BLUE if immune else GREEN
     for i, (x, y) in enumerate(snake):
-        rect = pygame.Rect(x, y, CELL, CELL)
-        pygame.draw.rect(screen, GREEN, rect, border_radius=6)
+        pygame.draw.rect(screen, color, (x, y, CELL, CELL), border_radius=6)
         if i == 0:
             pygame.draw.circle(screen, (0,0,0), (x+6, y+6), 3)
             pygame.draw.circle(screen, (0,0,0), (x+CELL-6, y+6), 3)
@@ -74,146 +55,207 @@ def draw_fruit(f):
         CELL//2 - 2
     )
 
+def check_collision_rect(pos1, pos2):
+    rect1 = pygame.Rect(pos1[0], pos1[1], CELL, CELL)
+    rect2 = pygame.Rect(pos2[0], pos2[1], CELL, CELL)
+    return rect1.colliderect(rect2)
+
 # ================== 主選單 ==================
 def menu():
-    buttons = [
-        Button((220, 200, 200, 50), "Easy"),
-        Button((220, 260, 200, 50), "Normal"),
-        Button((220, 320, 200, 50), "Hard")
-    ]
-
+    buttons = [("Easy", "easy"), ("Normal", "normal"), ("Hard", "hard")]
+    rects = [pygame.Rect(220, 200+i*60, 200, 50) for i in range(3)]
     while True:
         screen.fill(BG)
-        title = BIG_FONT.render("Snake Game", True, WHITE)
-        screen.blit(title, title.get_rect(center=(WIDTH//2, 120)))
-
-        for b in buttons:
-            b.draw()
-
+        screen.blit(BIG_FONT.render("Snake Game", True, WHITE),
+                    (WIDTH//2-120, 120))
+        mouse = pygame.mouse.get_pos()
+        for r, (t, _) in zip(rects, buttons):
+            color = BLUE if r.collidepoint(mouse) else GREEN
+            pygame.draw.rect(screen, color, r, border_radius=10)
+            screen.blit(FONT.render(t, True, WHITE),
+                        FONT.render(t, True, WHITE).get_rect(center=r.center))
         pygame.display.update()
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-
-            if buttons[0].clicked(event):
-                return "easy"
-            if buttons[1].clicked(event):
-                return "normal"
-            if buttons[2].clicked(event):
-                return "hard"
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if e.type == pygame.MOUSEBUTTONDOWN:
+                for r, (_, d) in zip(rects, buttons):
+                    if r.collidepoint(e.pos):
+                        return d
 
 # ================== 主遊戲 ==================
 def game(difficulty):
-    snake = [(100,100), (80,100), (60,100)]
+    snake = [(100,100),(80,100),(60,100)]
     direction = (0,0)
     started = False
-    lives = 3
+    can_go_left = False
+
+    max_lives = {"easy":5, "normal":5, "hard":3}[difficulty]
+    lives = max_lives
     score = 0
 
-    fruits = []
-    for _ in range(3):
-        fruits.append({
-            "pos": random_pos(),
-            "color": random.choice([RED, YELLOW, BLUE]),
-            "score": random.choice([1, 2, 3])
-        })
+    speed_base = {"easy":7, "normal":9, "hard":11}[difficulty]
+    speed = speed_base
 
+    immune = False
+    immune_end_time = 0
+
+    fruit_count = {"easy":5, "normal":6, "hard":7}[difficulty]
+    fruit_pool = ["yellow"]*6 + ["red"]*2 + ["blue"]*2
+
+    def spawn_fruit(existing):
+        types = [f["type"] for f in existing]
+        if "yellow" not in types:
+            t = "yellow"
+        elif difficulty=="hard" and "blue" not in types:
+            t = "blue"
+        elif difficulty=="hard" and "red" not in types:
+            t = "red"
+        else:
+            t = random.choice(fruit_pool)
+        return {"pos": random_pos(),"type":t,"color":RED if t=="red" else YELLOW if t=="yellow" else BLUE}
+
+    fruits = [spawn_fruit([]) for _ in range(fruit_count)]
+
+    # ------------------- 障礙物設定 -------------------
     obstacles = []
     movers = []
 
     if difficulty == "normal":
         obstacles = [random_pos() for _ in range(5)]
     if difficulty == "hard":
-        obstacles = [random_pos() for _ in range(7)]
-        movers = [{"pos": random_pos(), "dir": random.choice([(20,0),(-20,0),(0,20),(0,-20)])}]
-
-    speed = {"easy": 7, "normal": 9, "hard": 11}[difficulty]
+        # 第三關：固定障礙物增加到 25 個（原本 10 + 新增 15）
+        obstacles = [random_pos() for _ in range(25)]
+        dirs = [(CELL,0),(-CELL,0),(0,CELL),(0,-CELL)]
+        movers = [{"pos": random_pos(), "dir": random.choice(dirs)} for _ in range(3)]
 
     while True:
+        now = pygame.time.get_ticks()
+        if immune and now >= immune_end_time:
+            immune = False
+            speed = speed_base
+
         clock.tick(speed)
         screen.fill(BG)
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-
-            if event.type == pygame.KEYDOWN:
+        # ----------------- 輸入 -----------------
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if e.type == pygame.KEYDOWN:
+                if e.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_RIGHT):
+                    can_go_left = True
+                if e.key == pygame.K_LEFT and not can_go_left:
+                    continue
                 started = True
-                if event.key == pygame.K_UP:
-                    direction = (0, -CELL)
-                elif event.key == pygame.K_DOWN:
-                    direction = (0, CELL)
-                elif event.key == pygame.K_LEFT:
-                    direction = (-CELL, 0)
-                elif event.key == pygame.K_RIGHT:
-                    direction = (CELL, 0)
+                if e.key == pygame.K_UP: direction = (0,-CELL)
+                if e.key == pygame.K_DOWN: direction = (0,CELL)
+                if e.key == pygame.K_LEFT: direction = (-CELL,0)
+                if e.key == pygame.K_RIGHT: direction = (CELL,0)
 
-        if started:
-            head = (snake[0][0] + direction[0], snake[0][1] + direction[1])
-            snake.insert(0, head)
+        # ----------------- 遊戲邏輯 -----------------
+        if started and direction != (0,0):
+            steps = max(abs(direction[0]), abs(direction[1])) // CELL
+            dx = direction[0] // steps
+            dy = direction[1] // steps
+            for _ in range(steps):
+                head = (snake[0][0]+dx, snake[0][1]+dy)
+                snake.insert(0, head)
 
-            if head in [f["pos"] for f in fruits]:
+                eaten = None
                 for f in fruits:
                     if f["pos"] == head:
-                        score += f["score"]
+                        eaten = f
                         fruits.remove(f)
-                        fruits.append({
-                            "pos": random_pos(),
-                            "color": random.choice([RED, YELLOW, BLUE]),
-                            "score": random.choice([1, 2, 3])
-                        })
+                        fruits.append(spawn_fruit(fruits))
                         break
-            else:
-                snake.pop()
 
-            if (
-                head[0] < 0 or head[0] >= WIDTH or
-                head[1] < 0 or head[1] >= HEIGHT or
-                head in snake[1:] or
-                head in obstacles
-            ):
-                lives -= 1
-                snake = [(100,100), (80,100), (60,100)]
-                direction = (0,0)
-                started = False
+                if eaten:
+                    if eaten["type"] == "yellow":
+                        score += 1
+                    elif eaten["type"] == "red":
+                        score += 1
+                        lives = min(lives+1, max_lives)
+                    elif eaten["type"] == "blue":
+                        if not immune:
+                            speed = speed_base + 3
+                            immune = True
+                            immune_end_time = now + 3000
+                        score += 2
+                else:
+                    snake.pop()
 
-        # 移動障礙（困難）
+                # 撞牆
+                if head[0] < 0 or head[0] >= WIDTH or head[1] < 0 or head[1] >= HEIGHT:
+                    lives -= 1
+                    snake = [(100,100),(80,100),(60,100)]
+                    direction = (0,0)
+                    started = False
+                    can_go_left = False
+                    break
+
+                # 撞自己
+                if head in snake[1:]:
+                    lives -= 1
+                    snake = [(100,100),(80,100),(60,100)]
+                    direction = (0,0)
+                    started = False
+                    can_go_left = False
+                    break
+
+                # 撞障礙物/移動障礙物
+                if not immune:
+                    hit = False
+                    for o in obstacles:
+                        if check_collision_rect(head, o): hit = True
+                    for m in movers:
+                        if check_collision_rect(head, m["pos"]): hit = True
+                    if hit:
+                        lives -= 1
+                        snake = [(100,100),(80,100),(60,100)]
+                        direction = (0,0)
+                        started = False
+                        can_go_left = False
+                        break
+
+        # ----------------- 移動障礙物 -----------------
         for m in movers:
-            m["pos"] = (m["pos"][0] + m["dir"][0], m["pos"][1] + m["dir"][1])
-            if m["pos"][0] < 0 or m["pos"][0] >= WIDTH:
-                m["dir"] = (-m["dir"][0], m["dir"][1])
-            if m["pos"][1] < 0 or m["pos"][1] >= HEIGHT:
-                m["dir"] = (m["dir"][0], -m["dir"][1])
-            if snake[0] == m["pos"]:
-                lives -= 1
+            m["pos"] = (m["pos"][0]+m["dir"][0], m["pos"][1]+m["dir"][1])
+            if m["pos"][0]<0 or m["pos"][0]>=WIDTH: m["dir"] = (-m["dir"][0], m["dir"][1])
+            if m["pos"][1]<0 or m["pos"][1]>=HEIGHT: m["dir"] = (m["dir"][0], -m["dir"][1])
 
-        # 畫東西
-        for f in fruits:
-            draw_fruit(f)
-
-        for o in obstacles:
-            pygame.draw.rect(screen, GRAY, (*o, CELL, CELL), border_radius=5)
-
-        for m in movers:
-            pygame.draw.rect(screen, GRAY, (*m["pos"], CELL, CELL), border_radius=5)
-
-        draw_snake(snake)
+        # ----------------- 畫面 -----------------
+        for f in fruits: draw_fruit(f)
+        for o in obstacles: pygame.draw.rect(screen, GRAY, (*o,CELL,CELL))
+        for m in movers: pygame.draw.rect(screen, GRAY, (*m["pos"],CELL,CELL))
+        draw_snake(snake, immune)
 
         for i in range(lives):
-            draw_heart(20 + i*30, 20)
+            draw_heart(20+i*30, 20)
 
-        score_txt = FONT.render(f"Score: {score}", True, WHITE)
-        screen.blit(score_txt, (WIDTH-140, 15))
+        screen.blit(FONT.render(f"Score: {score}", True, WHITE), (WIDTH-140,15))
 
+        if not started:
+            hint = FONT.render("Press UP / DOWN / RIGHT to start", True, GRAY)
+            screen.blit(hint, hint.get_rect(center=(WIDTH//2, HEIGHT//2+80)))
+
+        # Game Over
         if lives <= 0:
-            return
+            while True:
+                screen.fill(BG)
+                screen.blit(BIG_FONT.render("GAME OVER", True, RED),
+                            (WIDTH//2-120, HEIGHT//2-60))
+                screen.blit(FONT.render(f"Score: {score}", True, WHITE),
+                            (WIDTH//2-60, HEIGHT//2))
+                screen.blit(FONT.render("Press any key", True, GRAY),
+                            (WIDTH//2-80, HEIGHT//2+40))
+                pygame.display.update()
+                for e in pygame.event.get():
+                    if e.type == pygame.KEYDOWN or e.type == pygame.QUIT:
+                        return
 
         pygame.display.update()
 
 # ================== 主流程 ==================
 while True:
-    diff = menu()
-    game(diff)
+    game(menu())
