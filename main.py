@@ -88,7 +88,6 @@ def game(difficulty):
     snake = [(100,100),(80,100),(60,100)]
     direction = (0,0)
     started = False
-    can_go_left = False
 
     max_lives = {"easy":5, "normal":5, "hard":3}[difficulty]
     lives = max_lives
@@ -124,7 +123,6 @@ def game(difficulty):
     if difficulty == "normal":
         obstacles = [random_pos() for _ in range(5)]
     if difficulty == "hard":
-        # 第三關：固定障礙物增加到 25 個（原本 10 + 新增 15）
         obstacles = [random_pos() for _ in range(25)]
         dirs = [(CELL,0),(-CELL,0),(0,CELL),(0,-CELL)]
         movers = [{"pos": random_pos(), "dir": random.choice(dirs)} for _ in range(3)]
@@ -143,10 +141,6 @@ def game(difficulty):
             if e.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
             if e.type == pygame.KEYDOWN:
-                if e.key in (pygame.K_UP, pygame.K_DOWN, pygame.K_RIGHT):
-                    can_go_left = True
-                if e.key == pygame.K_LEFT and not can_go_left:
-                    continue
                 started = True
                 if e.key == pygame.K_UP: direction = (0,-CELL)
                 if e.key == pygame.K_DOWN: direction = (0,CELL)
@@ -185,38 +179,27 @@ def game(difficulty):
                 else:
                     snake.pop()
 
-                # 撞牆
-                if head[0] < 0 or head[0] >= WIDTH or head[1] < 0 or head[1] >= HEIGHT:
-                    lives -= 1
-                    snake = [(100,100),(80,100),(60,100)]
-                    direction = (0,0)
-                    started = False
-                    can_go_left = False
-                    break
+                # ----------------- 邊界限制 -----------------
+                x, y = snake[0]
+                x = max(0, min(x, WIDTH-CELL))
+                y = max(0, min(y, HEIGHT-CELL))
+                snake[0] = (x, y)
 
-                # 撞自己
+                # 撞自己 / 撞障礙物
+                hit = False
                 if head in snake[1:]:
-                    lives -= 1
-                    snake = [(100,100),(80,100),(60,100)]
-                    direction = (0,0)
-                    started = False
-                    can_go_left = False
-                    break
-
-                # 撞障礙物/移動障礙物
+                    hit = True
                 if not immune:
-                    hit = False
                     for o in obstacles:
                         if check_collision_rect(head, o): hit = True
                     for m in movers:
                         if check_collision_rect(head, m["pos"]): hit = True
-                    if hit:
-                        lives -= 1
-                        snake = [(100,100),(80,100),(60,100)]
-                        direction = (0,0)
-                        started = False
-                        can_go_left = False
-                        break
+
+                if hit or (snake[0][0]==0 and direction[0]<0) or (snake[0][0]==WIDTH-CELL and direction[0]>0) or (snake[0][1]==0 and direction[1]<0) or (snake[0][1]==HEIGHT-CELL and direction[1]>0):
+                    lives -= 1
+                    direction = (0,0)
+                    started = False
+                    break
 
         # ----------------- 移動障礙物 -----------------
         for m in movers:
@@ -236,7 +219,7 @@ def game(difficulty):
         screen.blit(FONT.render(f"Score: {score}", True, WHITE), (WIDTH-140,15))
 
         if not started:
-            hint = FONT.render("Press UP / DOWN / RIGHT to start", True, GRAY)
+            hint = FONT.render("Press any key to start", True, GRAY)
             screen.blit(hint, hint.get_rect(center=(WIDTH//2, HEIGHT//2+80)))
 
         # Game Over
