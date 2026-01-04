@@ -4,84 +4,136 @@ import sys
 
 pygame.init()
 
-# ---------- 常數 ----------
-BLOCK = 20
-WIDTH, HEIGHT = 600, 400
-
-FONT = pygame.font.SysFont("consolas", 20)
-BIG_FONT = pygame.font.SysFont("consolas", 36)
-
-WHITE = (255,255,255)
-BLACK = (0,0,0)
-GREEN = (50,200,50)
-RED   = (220,50,50)
-BLUE  = (50,150,255)
-GRAY  = (150,150,150)
-
+# ================== 基本設定 ==================
+WIDTH, HEIGHT = 640, 480
+CELL = 20
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Snake Game")
 clock = pygame.time.Clock()
 
-# ---------- 工具 ----------
+FONT = pygame.font.SysFont("arial", 24)
+BIG_FONT = pygame.font.SysFont("arial", 40)
+
+# 顏色
+BG = (30, 30, 40)
+GREEN = (80, 200, 120)
+DARK_GREEN = (60, 160, 100)
+RED = (220, 60, 60)
+YELLOW = (240, 200, 60)
+BLUE = (80, 150, 220)
+GRAY = (120, 120, 120)
+WHITE = (240, 240, 240)
+
+# ================== UI 按鈕 ==================
+class Button:
+    def __init__(self, rect, text):
+        self.rect = pygame.Rect(rect)
+        self.text = text
+
+    def draw(self):
+        mouse = pygame.mouse.get_pos()
+        color = BLUE if self.rect.collidepoint(mouse) else DARK_GREEN
+        shadow = self.rect.move(4, 4)
+        pygame.draw.rect(screen, (20,20,20), shadow, border_radius=10)
+        pygame.draw.rect(screen, color, self.rect, border_radius=10)
+        txt = FONT.render(self.text, True, WHITE)
+        screen.blit(txt, txt.get_rect(center=self.rect.center))
+
+    def clicked(self, event):
+        return event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos)
+
+# ================== 愛心 ==================
+def draw_heart(x, y, size=8):
+    pygame.draw.circle(screen, RED, (x, y), size)
+    pygame.draw.circle(screen, RED, (x + size*2, y), size)
+    pygame.draw.polygon(screen, RED, [
+        (x - size, y),
+        (x + size*3, y),
+        (x + size, y + size*3)
+    ])
+
+# ================== 遊戲物件 ==================
 def random_pos():
     return (
-        random.randrange(0, WIDTH, BLOCK),
-        random.randrange(0, HEIGHT, BLOCK)
+        random.randrange(0, WIDTH, CELL),
+        random.randrange(0, HEIGHT, CELL)
     )
 
-# ---------- 難度選單 ----------
-def difficulty_menu():
+def draw_snake(snake):
+    for i, (x, y) in enumerate(snake):
+        rect = pygame.Rect(x, y, CELL, CELL)
+        pygame.draw.rect(screen, GREEN, rect, border_radius=6)
+        if i == 0:
+            pygame.draw.circle(screen, (0,0,0), (x+6, y+6), 3)
+            pygame.draw.circle(screen, (0,0,0), (x+CELL-6, y+6), 3)
+
+def draw_fruit(f):
+    pygame.draw.circle(
+        screen, f["color"],
+        (f["pos"][0] + CELL//2, f["pos"][1] + CELL//2),
+        CELL//2 - 2
+    )
+
+# ================== 主選單 ==================
+def menu():
+    buttons = [
+        Button((220, 200, 200, 50), "Easy"),
+        Button((220, 260, 200, 50), "Normal"),
+        Button((220, 320, 200, 50), "Hard")
+    ]
+
     while True:
-        screen.fill(BLACK)
-        screen.blit(BIG_FONT.render("Choose Difficulty", True, WHITE), (130, 60))
-        screen.blit(FONT.render("1 - Easy", True, WHITE), (240, 150))
-        screen.blit(FONT.render("2 - Normal", True, WHITE), (240, 190))
-        screen.blit(FONT.render("3 - Hard", True, WHITE), (240, 230))
-        screen.blit(FONT.render("Press 1 / 2 / 3", True, GRAY), (200, 280))
+        screen.fill(BG)
+        title = BIG_FONT.render("Snake Game", True, WHITE)
+        screen.blit(title, title.get_rect(center=(WIDTH//2, 120)))
+
+        for b in buttons:
+            b.draw()
+
         pygame.display.update()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_1:
-                    return "easy"
-                if event.key == pygame.K_2:
-                    return "normal"
-                if event.key == pygame.K_3:
-                    return "hard"
 
-# ---------- 障礙物 ----------
-def generate_walls(level):
-    if level == "easy":
-        return []
-    count = {"normal": 12, "hard": 20}[level]
-    return [random_pos() for _ in range(count)]
+            if buttons[0].clicked(event):
+                return "easy"
+            if buttons[1].clicked(event):
+                return "normal"
+            if buttons[2].clicked(event):
+                return "hard"
 
-# ---------- 主遊戲 ----------
-def run_game(difficulty):
-    snake = [(100,100),(80,100),(60,100)]
-    direction = None   # ★ 一開始不動
-    score = 0
+# ================== 主遊戲 ==================
+def game(difficulty):
+    snake = [(100,100), (80,100), (60,100)]
+    direction = (0,0)
+    started = False
     lives = 3
-    speed = 10
+    score = 0
 
-    walls = generate_walls(difficulty)
+    fruits = []
+    for _ in range(3):
+        fruits.append({
+            "pos": random_pos(),
+            "color": random.choice([RED, YELLOW, BLUE]),
+            "score": random.choice([1, 2, 3])
+        })
 
-    foods = [
-        {"pos": random_pos(), "color": RED, "score": 10},
-        {"pos": random_pos(), "color": GREEN, "score": 20},
-        {"pos": random_pos(), "color": BLUE, "score": 30},
-    ]
+    obstacles = []
+    movers = []
 
-    danger = {
-        "pos": random_pos(),
-        "dir": random.choice([(BLOCK,0),(-BLOCK,0),(0,BLOCK),(0,-BLOCK)])
-    }
+    if difficulty == "normal":
+        obstacles = [random_pos() for _ in range(5)]
+    if difficulty == "hard":
+        obstacles = [random_pos() for _ in range(7)]
+        movers = [{"pos": random_pos(), "dir": random.choice([(20,0),(-20,0),(0,20),(0,-20)])}]
+
+    speed = {"easy": 7, "normal": 9, "hard": 11}[difficulty]
 
     while True:
         clock.tick(speed)
+        screen.fill(BG)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -89,108 +141,79 @@ def run_game(difficulty):
                 sys.exit()
 
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_UP and direction!=(0,BLOCK):
-                    direction=(0,-BLOCK)
-                elif event.key == pygame.K_DOWN and direction!=(0,-BLOCK):
-                    direction=(0,BLOCK)
-                elif event.key == pygame.K_LEFT and direction!=(BLOCK,0):
-                    direction=(-BLOCK,0)
-                elif event.key == pygame.K_RIGHT and direction!=(-BLOCK,0):
-                    direction=(BLOCK,0)
+                started = True
+                if event.key == pygame.K_UP:
+                    direction = (0, -CELL)
+                elif event.key == pygame.K_DOWN:
+                    direction = (0, CELL)
+                elif event.key == pygame.K_LEFT:
+                    direction = (-CELL, 0)
+                elif event.key == pygame.K_RIGHT:
+                    direction = (CELL, 0)
 
-        # ★ 還沒按方向鍵，不移動
-        if direction is None:
-            screen.fill(BLACK)
-            for x,y in snake:
-                pygame.draw.rect(screen, GREEN,(x,y,BLOCK,BLOCK))
-            for food in foods:
-                pygame.draw.rect(screen, food["color"],(*food["pos"],BLOCK,BLOCK))
-            for wx,wy in walls:
-                pygame.draw.rect(screen, GRAY,(wx,wy,BLOCK,BLOCK))
+        if started:
+            head = (snake[0][0] + direction[0], snake[0][1] + direction[1])
+            snake.insert(0, head)
 
-            screen.blit(FONT.render("Press arrow key to start", True, WHITE), (170, 180))
-            pygame.display.update()
-            continue
-
-        hx,hy = snake[0]
-        new_head = (hx+direction[0], hy+direction[1])
-
-        if (
-            new_head[0]<0 or new_head[0]>=WIDTH or
-            new_head[1]<0 or new_head[1]>=HEIGHT or
-            new_head in snake or
-            new_head in walls
-        ):
-            lives -= 1
-            snake = [(100,100),(80,100),(60,100)]
-            direction = None
-            if lives <= 0:
-                return
-            continue
-
-        snake.insert(0,new_head)
-        snake.pop()
-
-        for food in foods:
-            if new_head == food["pos"]:
-                score += food["score"]
-                snake.append(snake[-1])
-                food["pos"] = random_pos()
-
-        if difficulty == "hard":
-            dx,dy = danger["dir"]
-            x,y = danger["pos"]
-            nx,ny = x+dx,y+dy
-            if nx<0 or nx>=WIDTH or ny<0 or ny>=HEIGHT:
-                danger["dir"] = random.choice([(BLOCK,0),(-BLOCK,0),(0,BLOCK),(0,-BLOCK)])
+            if head in [f["pos"] for f in fruits]:
+                for f in fruits:
+                    if f["pos"] == head:
+                        score += f["score"]
+                        fruits.remove(f)
+                        fruits.append({
+                            "pos": random_pos(),
+                            "color": random.choice([RED, YELLOW, BLUE]),
+                            "score": random.choice([1, 2, 3])
+                        })
+                        break
             else:
-                danger["pos"] = (nx,ny)
+                snake.pop()
 
-            if new_head == danger["pos"]:
-                score = max(0, score-15)
+            if (
+                head[0] < 0 or head[0] >= WIDTH or
+                head[1] < 0 or head[1] >= HEIGHT or
+                head in snake[1:] or
+                head in obstacles
+            ):
+                lives -= 1
+                snake = [(100,100), (80,100), (60,100)]
+                direction = (0,0)
+                started = False
 
-        screen.fill(BLACK)
+        # 移動障礙（困難）
+        for m in movers:
+            m["pos"] = (m["pos"][0] + m["dir"][0], m["pos"][1] + m["dir"][1])
+            if m["pos"][0] < 0 or m["pos"][0] >= WIDTH:
+                m["dir"] = (-m["dir"][0], m["dir"][1])
+            if m["pos"][1] < 0 or m["pos"][1] >= HEIGHT:
+                m["dir"] = (m["dir"][0], -m["dir"][1])
+            if snake[0] == m["pos"]:
+                lives -= 1
 
-        for x,y in snake:
-            pygame.draw.rect(screen, GREEN,(x,y,BLOCK,BLOCK))
+        # 畫東西
+        for f in fruits:
+            draw_fruit(f)
 
-        for food in foods:
-            pygame.draw.rect(screen, food["color"],(*food["pos"],BLOCK,BLOCK))
+        for o in obstacles:
+            pygame.draw.rect(screen, GRAY, (*o, CELL, CELL), border_radius=5)
 
-        for wx,wy in walls:
-            pygame.draw.rect(screen, GRAY,(wx,wy,BLOCK,BLOCK))
+        for m in movers:
+            pygame.draw.rect(screen, GRAY, (*m["pos"], CELL, CELL), border_radius=5)
 
-        if difficulty == "hard":
-            pygame.draw.rect(screen, GRAY,(*danger["pos"],BLOCK,BLOCK))
+        draw_snake(snake)
 
-        screen.blit(FONT.render(f"Score: {score}",True,WHITE),(10,10))
-        screen.blit(FONT.render(f"Lives: {lives}",True,WHITE),(10,30))
-        screen.blit(FONT.render(f"Mode: {difficulty}",True,WHITE),(10,50))
+        for i in range(lives):
+            draw_heart(20 + i*30, 20)
+
+        score_txt = FONT.render(f"Score: {score}", True, WHITE)
+        screen.blit(score_txt, (WIDTH-140, 15))
+
+        if lives <= 0:
+            return
 
         pygame.display.update()
 
-# ---------- Game Over ----------
-def game_over_screen():
-    while True:
-        screen.fill(BLACK)
-        screen.blit(BIG_FONT.render("GAME OVER", True, RED), (170, 150))
-        screen.blit(FONT.render("R - Restart", True, WHITE), (230, 210))
-        screen.blit(FONT.render("Q - Quit", True, WHITE), (230, 240))
-        pygame.display.update()
-
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r:
-                    return
-                if event.key == pygame.K_q:
-                    pygame.quit()
-                    sys.exit()
-
-# ---------- 主流程 ----------
+# ================== 主流程 ==================
 while True:
-    mode = difficulty_menu()
-    run_game(mode)
-    game_over_screen()
+    diff = menu()
+    game(diff)
