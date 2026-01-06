@@ -32,5 +32,7 @@
 ↑ ↓ ← → ：控制蛇的移動方向
 
 ▶️ 執行方式
-
+1.
 請先確認已安裝 Python 與 Pygame才能開啟遊戲
+2.不須安裝版本下載(exe)
+https://drive.google.com/file/d/17DoPh8DyzF06K7Zn9ZyKVuzIAYFW0CFp/view?usp=sharing
